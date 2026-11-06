@@ -17,7 +17,7 @@ from app.orders.service import InvalidTransition, OrderNotFound
 
 log = get_logger(__name__)
 
-NOT_FOUND_MESSAGE = "Order {order_id} not foudn"
+NOT_FOUND_MESSAGE = "Order {order_id} not found"
 
 
 def error_body(code: str, message: str, **extra: object) -> dict:
