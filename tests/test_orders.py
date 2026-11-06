@@ -92,3 +92,33 @@ def test_order_totals(client):
     resp = client.post("/orders", json=order_payload(items=items))
     expected = sum(i["quantity"] * i["unit_price"] for i in items)
     assert resp.json()["total"] == expected
+
+
+def test_list_orders_pages_with_after_cursor(client):
+    ids = [client.post("/orders", json=order_payload(f"cus_{n}")).json()["id"] for n in range(5)]
+    newest_first = ids[::-1]
+
+    page1 = client.get("/orders", params={"limit": 2}).json()
+    assert [o["id"] for o in page1] == newest_first[:2]
+    page2 = client.get("/orders", params={"limit": 2, "after": page1[-1]["id"]}).json()
+    assert [o["id"] for o in page2] == newest_first[2:4]
+    page3 = client.get("/orders", params={"limit": 2, "after": page2[-1]["id"]}).json()
+    assert [o["id"] for o in page3] == newest_first[4:]
+
+
+def test_list_orders_default_limit_is_50(client, db):
+    for n in range(55):
+        db.execute(
+            "INSERT INTO orders (customer_id, total_cents, created_at)"
+            " VALUES (?, 100, '2026-01-01T00:00:00Z')",
+            (f"cus_{n}",),
+        )
+    db.commit()
+    assert len(client.get("/orders").json()) == 50
+
+
+@pytest.mark.parametrize("params", [{"limit": 0}, {"limit": 201}, {"limit": "x"}, {"after": 0}])
+def test_list_orders_rejects_bad_paging(client, params):
+    resp = client.get("/orders", params=params)
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "invalid_request"

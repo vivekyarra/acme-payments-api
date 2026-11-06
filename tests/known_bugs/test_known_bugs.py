@@ -21,7 +21,6 @@ from app.webhooks.sender import WebhookSender
 from conftest import order_payload
 
 
-@pytest.mark.xfail(strict=True, reason="issue #2: GET /orders ignores limit and returns every row")
 def test_list_orders_is_paginated(client):
     for n in range(30):
         client.post("/orders", json=order_payload(f"cus_{n}"))

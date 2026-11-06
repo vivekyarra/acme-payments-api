@@ -75,8 +75,10 @@ def get_order(conn: sqlite3.Connection, order_id: int) -> dict:
     return order
 
 
-def list_orders(conn: sqlite3.Connection) -> list[dict]:
-    return repo.list_orders_with_items(conn)
+def list_orders(
+    conn: sqlite3.Connection, *, limit: int | None = None, after: int | None = None
+) -> list[dict]:
+    return repo.list_orders_with_items(conn, limit=limit, after=after)
 
 
 def cancel_order(

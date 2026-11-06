@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from fastapi import APIRouter, BackgroundTasks, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 
 from app.api.deps import get_db, get_settings
 from app.api.ratelimit import track_request
@@ -12,6 +12,9 @@ from app.config import Settings
 from app.orders import service
 from app.orders.models import OrderIn, OrderOut
 from app.workers.outbox import drain_outbox
+
+DEFAULT_PAGE_SIZE = 50
+MAX_PAGE_SIZE = 200
 
 router = APIRouter(prefix="/orders", tags=["orders"], dependencies=[Depends(track_request)])
 
@@ -30,8 +33,13 @@ def create_order(
 
 
 @router.get("", response_model=list[OrderOut])
-def list_orders(conn: sqlite3.Connection = Depends(get_db)) -> list[dict]:
-    return [service.to_public(o) for o in service.list_orders(conn)]
+def list_orders(
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    after: int | None = Query(None, ge=1, description="Return orders older than this order id."),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[dict]:
+    orders = service.list_orders(conn, limit=limit, after=after)
+    return [service.to_public(o) for o in orders]
 
 
 @router.get("/{order_id}", response_model=OrderOut)

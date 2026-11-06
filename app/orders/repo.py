@@ -60,12 +60,25 @@ def get_order_with_items(conn: sqlite3.Connection, order_id: int) -> Row | None:
     return order
 
 
-def list_orders_with_items(conn: sqlite3.Connection) -> list[Row]:
-    """Every order, newest first, each with its line items."""
-    orders = [
-        dict(r)
-        for r in conn.execute(f"SELECT {_ORDER_COLUMNS} FROM orders ORDER BY id DESC")
-    ]
+def list_orders_with_items(
+    conn: sqlite3.Connection, *, limit: int | None = None, after: int | None = None
+) -> list[Row]:
+    """Orders newest first, each with its line items.
+
+    Keyset pagination: ``after`` is the id of the last order on the previous
+    page, so the next page is every order with a smaller id. ``limit`` caps
+    the page size; ``None`` means no cap.
+    """
+    sql = f"SELECT {_ORDER_COLUMNS} FROM orders"
+    params: list[Any] = []
+    if after is not None:
+        sql += " WHERE id < ?"
+        params.append(after)
+    sql += " ORDER BY id DESC"
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(limit)
+    orders = [dict(r) for r in conn.execute(sql, params)]
     for order in orders:
         order["items"] = get_items(conn, order["id"])
     return orders
