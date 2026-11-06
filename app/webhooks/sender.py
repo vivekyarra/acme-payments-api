@@ -1,7 +1,7 @@
 """POST order events to a partner's webhook URL.
 
 The sender is synchronous. Transient failures (network errors, HTTP 429 and
-5xx) are retried with exponential backoff; permanent ones (other 4xx) are not.
+5xx) are retried with jittered exponential backoff; permanent ones (other 4xx) are not.
 The caller (``app.workers.outbox``) records the result.
 """
 
@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import random
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -50,12 +51,14 @@ class WebhookSender:
         max_attempts: int = 4,
         backoff: float = 0.5,
         sleep: Callable[[float], None] = time.sleep,
+        jitter: Callable[[], float] = random.random,
     ) -> None:
         self._client = client or httpx.Client(timeout=timeout)
         self._secret = secret
         self._max_attempts = max(1, max_attempts)
         self._backoff = backoff
         self._sleep = sleep
+        self._jitter = jitter
 
     def send(self, url: str, payload: dict) -> DeliveryResult:
         body = json.dumps(payload, separators=(",", ":")).encode()
@@ -71,7 +74,8 @@ class WebhookSender:
             transient = result.status_code is None or is_transient(result.status_code)
             if not transient or attempt == self._max_attempts:
                 return result
-            self._sleep(self._backoff * 2 ** (attempt - 1))
+            # Full jitter: spread retries so many failed deliveries don't retry in lockstep.
+            self._sleep(self._backoff * 2 ** (attempt - 1) * (0.5 + self._jitter()))
         return result
 
     def _attempt(self, url: str, body: bytes, headers: dict, attempt: int) -> DeliveryResult:

@@ -46,7 +46,7 @@ def test_webhook_sender_retries_transient_failures():
         calls.append(request)
         return httpx.Response(503 if len(calls) == 1 else 200)
 
-    sender = WebhookSender(httpx.Client(transport=httpx.MockTransport(handler)))
+    sender = WebhookSender(httpx.Client(transport=httpx.MockTransport(handler)), sleep=lambda _s: None)
     result = sender.send("https://partner.example/hooks", {"event": "order.created"})
     assert result.ok
     assert result.attempts == 2
