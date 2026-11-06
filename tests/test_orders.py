@@ -92,3 +92,49 @@ def test_order_totals(client):
     resp = client.post("/orders", json=order_payload(items=items))
     expected = sum(i["quantity"] * i["unit_price"] for i in items)
     assert resp.json()["total"] == expected
+
+
+def test_list_orders_items_attach_to_the_right_order_in_order(db):
+    from app.orders import repo
+
+    for order_id, customer in ((1, "a"), (2, "b"), (3, "c")):
+        db.execute(
+            "INSERT INTO orders (id, customer_id, total_cents, created_at)"
+            " VALUES (?, ?, 0, '2026-01-01T00:00:00Z')",
+            (order_id, customer),
+        )
+    # Interleave inserts so item ids alone would mix the orders up.
+    for order_id, sku in ((1, "A1"), (3, "C1"), (1, "A2"), (3, "C2"), (1, "A3")):
+        db.execute(
+            "INSERT INTO order_items (order_id, sku, quantity, unit_price_cents)"
+            " VALUES (?, ?, 1, 100)",
+            (order_id, sku),
+        )
+    db.commit()
+
+    orders = {o["id"]: [i["sku"] for i in o["items"]] for o in repo.list_orders_with_items(db)}
+    assert orders == {1: ["A1", "A2", "A3"], 2: [], 3: ["C1", "C2"]}
+
+
+def test_list_orders_with_no_orders(db):
+    from app.orders import repo
+
+    assert repo.list_orders_with_items(db) == []
+
+
+def test_list_orders_handles_more_ids_than_sqlite_bind_limit(db):
+    from app.orders import repo
+
+    n = 40_000  # above SQLITE_MAX_VARIABLE_NUMBER (32766 on modern builds)
+    db.executemany(
+        "INSERT INTO orders (id, customer_id, total_cents, created_at)"
+        " VALUES (?, 'c', 0, '2026-01-01T00:00:00Z')",
+        [(i,) for i in range(1, n + 1)],
+    )
+    db.execute(
+        "INSERT INTO order_items (order_id, sku, quantity, unit_price_cents) VALUES (1, 'X', 1, 1)"
+    )
+    db.commit()
+    orders = repo.list_orders_with_items(db)
+    assert len(orders) == n
+    assert orders[-1]["items"][0]["sku"] == "X"

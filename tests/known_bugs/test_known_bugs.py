@@ -53,7 +53,6 @@ def test_webhook_sender_retries_transient_failures():
     assert result.attempts == 2
 
 
-@pytest.mark.xfail(strict=True, reason="issue #8: listing orders runs one items query per order")
 def test_listing_orders_uses_constant_queries(db):
     for n in range(5):
         service.create_order(db, OrderIn(**order_payload(f"cus_{n}")))

@@ -5,6 +5,7 @@ Nothing in here commits; callers own the transaction (see ``app.db.transaction``
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import Any
 
@@ -66,9 +67,32 @@ def list_orders_with_items(conn: sqlite3.Connection) -> list[Row]:
         dict(r)
         for r in conn.execute(f"SELECT {_ORDER_COLUMNS} FROM orders ORDER BY id DESC")
     ]
-    for order in orders:
-        order["items"] = get_items(conn, order["id"])
+    attach_items(conn, orders)
     return orders
+
+
+def attach_items(conn: sqlite3.Connection, orders: list[Row]) -> None:
+    """Set ``order["items"]`` on every order using one query, whatever the count.
+
+    The ids go in as a single JSON array parameter, so a long page never hits
+    SQLite's limit on bound variables. Items keep insertion order; an order
+    with no items gets an empty list.
+    """
+    by_id: dict[int, Row] = {}
+    for order in orders:
+        order["items"] = []
+        by_id[order["id"]] = order
+    if not by_id:
+        return
+    rows = conn.execute(
+        "SELECT order_id, sku, quantity, unit_price_cents FROM order_items"
+        " WHERE order_id IN (SELECT value FROM json_each(?))"
+        " ORDER BY order_id, id",
+        (json.dumps(list(by_id)),),
+    )
+    for row in rows:
+        item = dict(row)
+        by_id[item.pop("order_id")]["items"].append(item)
 
 
 def set_status(conn: sqlite3.Connection, order_id: int, status: str) -> None:
