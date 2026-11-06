@@ -11,4 +11,4 @@ slack_safety: 1.5
 default_due_days: 7
 baseline_senior_minutes: 45
 max_teaching_per_pr: 2
-auto_delegate: true
+auto_delegate: false
