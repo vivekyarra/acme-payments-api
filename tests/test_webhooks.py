@@ -14,7 +14,7 @@ HOOK_URL = "https://partner.example/hooks"
 
 
 def sender_with(handler) -> WebhookSender:
-    return WebhookSender(httpx.Client(transport=httpx.MockTransport(handler)), secret="s3cret")
+    return WebhookSender(httpx.Client(transport=httpx.MockTransport(handler)), secret="s3cret", sleep=lambda _s: None)
 
 
 def test_send_success_is_signed():
@@ -62,3 +62,33 @@ def test_outbox_delivers_order_created(settings, db):
 def test_no_webhook_url_means_no_outbox_rows(db):
     service.create_order(db, OrderIn(**order_payload()))
     assert db.execute("SELECT COUNT(*) FROM webhook_deliveries").fetchone()[0] == 0
+
+
+def test_retry_delays_back_off_with_jitter():
+    delays = []
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(503)
+
+    sender = WebhookSender(
+        httpx.Client(transport=httpx.MockTransport(handler)),
+        sleep=delays.append,
+        jitter=lambda: 0.5,
+    )
+    result = sender.send("https://partner.example/hooks", {"event": "order.created"})
+    assert not result.ok and result.attempts == 4
+    assert delays == [0.5, 1.0, 2.0]
+
+
+def test_permanent_failure_is_not_retried():
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(404)
+
+    sender = WebhookSender(httpx.Client(transport=httpx.MockTransport(handler)), sleep=lambda _s: None)
+    assert sender.send("https://partner.example/hooks", {}).attempts == 1
+    assert len(calls) == 1
