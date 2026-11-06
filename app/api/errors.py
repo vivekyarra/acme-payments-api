@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
 from app.logging import get_logger
-from app.orders.service import InvalidTransition, OrderNotFound
+from app.orders.service import IdempotencyKeyReused, InvalidTransition, OrderNotFound
 
 log = get_logger(__name__)
 
@@ -37,6 +37,16 @@ async def invalid_transition(_: Request, exc: InvalidTransition) -> JSONResponse
     return JSONResponse(
         status_code=status.HTTP_409_CONFLICT,
         content=error_body("conflict", str(exc)),
+    )
+
+
+async def idempotency_key_reused(_: Request, exc: IdempotencyKeyReused) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content=error_body(
+            "idempotency_key_reused",
+            "Idempotency-Key was already used with a different request body",
+        ),
     )
 
 
@@ -70,6 +80,7 @@ async def unhandled(_: Request, exc: Exception) -> JSONResponse:
 def register(app: FastAPI) -> None:
     app.add_exception_handler(OrderNotFound, order_not_found)
     app.add_exception_handler(InvalidTransition, invalid_transition)
+    app.add_exception_handler(IdempotencyKeyReused, idempotency_key_reused)
     app.add_exception_handler(HTTPException, http_error)
     app.add_exception_handler(RequestValidationError, validation_error)
     app.add_exception_handler(Exception, unhandled)

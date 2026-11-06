@@ -30,7 +30,6 @@ def test_list_orders_is_paginated(client):
     assert len(resp.json()) == 10
 
 
-@pytest.mark.xfail(strict=True, reason="issue #3: a retried POST /orders creates a second order")
 def test_post_orders_is_idempotent(client, db):
     headers = {"Idempotency-Key": "8d4c1e9a-retry-me"}
     first = client.post("/orders", json=order_payload(), headers=headers)

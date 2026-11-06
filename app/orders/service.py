@@ -6,6 +6,7 @@ to integer cents at the edge so totals never drift.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from decimal import ROUND_HALF_UP, Decimal
@@ -31,6 +32,14 @@ class InvalidTransition(Exception):
     pass
 
 
+class IdempotencyKeyReused(Exception):
+    """The Idempotency-Key was already used for a request with a different body."""
+
+    def __init__(self, key: str) -> None:
+        super().__init__(key)
+        self.key = key
+
+
 def to_cents(amount: float) -> int:
     return int((Decimal(str(amount)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
@@ -43,10 +52,70 @@ def order_total_cents(items: list[dict]) -> int:
     return sum(i["quantity"] * i["unit_price_cents"] for i in items)
 
 
+def idempotency_scope(api_key: str) -> str:
+    """Namespace for Idempotency-Keys: one per caller, without storing the API key."""
+    return hashlib.sha256(api_key.encode()).hexdigest()
+
+
+def request_fingerprint(order: OrderIn) -> str:
+    canonical = json.dumps(order.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
 def create_order(
-    conn: sqlite3.Connection, order: OrderIn, *, webhook_url: str = ""
+    conn: sqlite3.Connection,
+    order: OrderIn,
+    *,
+    webhook_url: str = "",
+    idempotency_key: str | None = None,
+    scope: str = "",
 ) -> dict:
-    """Insert the order and its items, and queue an ``order.created`` webhook."""
+    """Insert the order and its items, and queue an ``order.created`` webhook.
+
+    With an ``idempotency_key``, a repeat of the same request returns the order
+    the first one created instead of inserting another. The key row is written
+    in the same transaction as the order, so the table's primary key decides
+    the winner when two requests race; the loser rolls back and replays.
+    """
+    if idempotency_key is None:
+        return _insert_order(conn, order, webhook_url=webhook_url)
+
+    fingerprint = request_fingerprint(order)
+    replay = _replay(conn, scope, idempotency_key, fingerprint)
+    if replay is not None:
+        return replay
+    try:
+        return _insert_order(
+            conn,
+            order,
+            webhook_url=webhook_url,
+            idempotency=(scope, idempotency_key, fingerprint),
+        )
+    except sqlite3.IntegrityError:
+        # Lost a race with a concurrent request using the same key.
+        replay = _replay(conn, scope, idempotency_key, fingerprint)
+        if replay is None:
+            raise  # some other constraint failed
+        return replay
+
+
+def _replay(conn: sqlite3.Connection, scope: str, key: str, fingerprint: str) -> dict | None:
+    seen = repo.get_idempotency_key(conn, scope, key)
+    if seen is None:
+        return None
+    if seen["request_hash"] != fingerprint:
+        raise IdempotencyKeyReused(key)
+    log.info("idempotent replay of order %s", seen["order_id"])
+    return get_order(conn, seen["order_id"])
+
+
+def _insert_order(
+    conn: sqlite3.Connection,
+    order: OrderIn,
+    *,
+    webhook_url: str,
+    idempotency: tuple[str, str, str] | None = None,
+) -> dict:
     items = [
         {"sku": i.sku, "quantity": i.quantity, "unit_price_cents": to_cents(i.unit_price)}
         for i in order.items
@@ -61,6 +130,16 @@ def create_order(
             created_at=utcnow_iso(),
         )
         repo.insert_items(conn, order_id, items)
+        if idempotency is not None:
+            scope, key, fingerprint = idempotency
+            repo.insert_idempotency_key(
+                conn,
+                scope=scope,
+                key=key,
+                request_hash=fingerprint,
+                order_id=order_id,
+                created_at=utcnow_iso(),
+            )
         created = repo.get_order_with_items(conn, order_id)
         if webhook_url:
             _enqueue_webhook(conn, created, ORDER_CREATED, webhook_url)

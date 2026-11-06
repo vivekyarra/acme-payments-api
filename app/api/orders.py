@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import sqlite3
 
-from fastapi import APIRouter, BackgroundTasks, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, status
 
-from app.api.deps import get_db, get_settings
+from app.api.deps import get_db, get_settings, require_api_key
 from app.api.ratelimit import track_request
 from app.config import Settings
 from app.orders import service
@@ -22,8 +22,18 @@ def create_order(
     background: BackgroundTasks,
     conn: sqlite3.Connection = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    api_key: str = Depends(require_api_key),
+    idempotency_key: str | None = Header(
+        None, alias="Idempotency-Key", min_length=1, max_length=255
+    ),
 ) -> dict:
-    order = service.create_order(conn, body, webhook_url=settings.webhook_url)
+    order = service.create_order(
+        conn,
+        body,
+        webhook_url=settings.webhook_url,
+        idempotency_key=idempotency_key,
+        scope=service.idempotency_scope(api_key),
+    )
     if settings.webhook_url:
         background.add_task(drain_outbox, settings)
     return service.to_public(order)

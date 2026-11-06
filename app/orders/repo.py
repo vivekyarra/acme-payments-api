@@ -71,6 +71,31 @@ def list_orders_with_items(conn: sqlite3.Connection) -> list[Row]:
     return orders
 
 
+def get_idempotency_key(conn: sqlite3.Connection, scope: str, key: str) -> Row | None:
+    row = conn.execute(
+        "SELECT request_hash, order_id FROM idempotency_keys WHERE scope = ? AND key = ?",
+        (scope, key),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def insert_idempotency_key(
+    conn: sqlite3.Connection,
+    *,
+    scope: str,
+    key: str,
+    request_hash: str,
+    order_id: int,
+    created_at: str,
+) -> None:
+    """Raises sqlite3.IntegrityError if (scope, key) is already taken."""
+    conn.execute(
+        "INSERT INTO idempotency_keys (scope, key, request_hash, order_id, created_at)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (scope, key, request_hash, order_id, created_at),
+    )
+
+
 def set_status(conn: sqlite3.Connection, order_id: int, status: str) -> None:
     conn.execute("UPDATE orders SET status = ? WHERE id = ?", (status, order_id))
 
