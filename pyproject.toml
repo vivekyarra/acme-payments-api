@@ -21,12 +21,6 @@ package = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-# Tests marked flaky_demo are deselected by default so CI stays green.
-# Run them on purpose with:  uv run pytest -m flaky_demo
-addopts = "-m 'not flaky_demo'"
-markers = [
-    "flaky_demo: a genuinely flaky test kept for issue #7; deselected by default",
-]
 xfail_strict = true
 filterwarnings = [
     "ignore:Using `httpx` with `starlette.testclient` is deprecated",

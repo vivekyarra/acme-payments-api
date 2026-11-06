@@ -22,10 +22,8 @@ Layout: `app/api` (routes, errors, rate limiting), `app/orders` (service + SQL r
 * `tests/known_bugs/test_known_bugs.py` has one `xfail(strict=True)` test per behavioural
   bug (#2, #3, #6, #8, #10). They show up as **xfailed** today. Fix a bug and its test
   passes, strict mode fails the run, and you delete the marker in the same PR.
-* `test_order_totals` (#7) is genuinely flaky (~1 run in 5). It carries
-  `@pytest.mark.flaky_demo`, which `pyproject.toml` deselects by default
-  (`addopts = "-m 'not flaky_demo'"`) so CI stays green. Run it on purpose with
-  `uv run pytest -m flaky_demo`.
+* `test_order_totals` (#7) used to be flaky (random prices compared as floats). It now
+  uses fixed cases, compares exact cents, and runs in the default suite.
 
 ## The issues
 

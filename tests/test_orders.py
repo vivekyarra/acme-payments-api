@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import random
+from decimal import Decimal
 
 import pytest
 
@@ -78,17 +78,29 @@ def test_healthz_needs_no_key(client):
     assert client.get("/healthz", headers={"X-API-Key": ""}).json() == {"ok": True}
 
 
-@pytest.mark.flaky_demo
-def test_order_totals(client):
-    """Issue #7: this test fails some of the time. Run: uv run pytest -m flaky_demo"""
+@pytest.mark.parametrize(
+    ("lines", "expected_total"),
+    [
+        # (quantity, unit_price) pairs. Prices are strings so the expected total is
+        # exact; these are the kinds of values that drift when summed as floats.
+        ([(1, "0.10"), (1, "0.20")], "0.30"),
+        ([(3, "0.10")], "0.30"),
+        ([(3, "19.99"), (2, "0.01"), (5, "4.35")], "81.74"),
+        ([(5, "1.15"), (4, "2.675"), (1, "0.07")], "16.54"),  # 2.675 rounds half-up to 2.68
+        ([(2, "12.50"), (1, "4.25"), (4, "0.33"), (1, "7.77"), (3, "1.01"), (5, "19.99")], "141.32"),
+    ],
+)
+def test_order_totals(client, lines, expected_total):
+    """Totals are summed in integer cents, so they are exact for every case.
+
+    The API returns ``total`` as a JSON number; we convert it back to cents
+    and compare integers rather than floats with ``==``.
+    """
     items = [
-        {
-            "sku": f"SKU-{n}",
-            "quantity": random.randint(1, 5),
-            "unit_price": round(random.uniform(0.01, 20), 2),
-        }
-        for n in range(random.randint(1, 6))
+        {"sku": f"SKU-{n}", "quantity": qty, "unit_price": float(price)}
+        for n, (qty, price) in enumerate(lines)
     ]
     resp = client.post("/orders", json=order_payload(items=items))
-    expected = sum(i["quantity"] * i["unit_price"] for i in items)
-    assert resp.json()["total"] == expected
+    assert resp.status_code == 201
+    total_cents = int(Decimal(str(resp.json()["total"])) * 100)
+    assert total_cents == int(Decimal(expected_total) * 100)
