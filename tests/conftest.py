@@ -14,7 +14,14 @@ API_KEY = "test-key"
 
 @pytest.fixture
 def settings(tmp_path) -> Settings:
-    return Settings(database_path=str(tmp_path / "shop.sqlite3"), api_keys=frozenset({API_KEY}))
+    # A generous rate limit so ordinary tests never hit it; tests/test_ratelimit.py
+    # builds its own tight limiter.
+    return Settings(
+        database_path=str(tmp_path / "shop.sqlite3"),
+        api_keys=frozenset({API_KEY}),
+        rate_limit_per_second=1000.0,
+        rate_limit_burst=1000,
+    )
 
 
 @pytest.fixture

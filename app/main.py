@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import time
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 
 from app import logging as app_logging
 from app.api import errors
+from app.api.deps import require_api_key
 from app.api.orders import router as orders_router
+from app.api.ratelimit import RateLimiter
 from app.config import Settings
 from app.db import connect, run_migrations
 
@@ -29,6 +31,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="demo-shop", version="0.1.0")
     app.state.settings = settings
+    app.state.limiter = RateLimiter(settings.rate_limit_per_second, settings.rate_limit_burst)
     errors.register(app)
     app.include_router(orders_router)
 
@@ -49,6 +52,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/healthz", tags=["ops"])
     def healthz() -> dict:
         return {"ok": True}
+
+    @app.get("/ops/ratelimit", tags=["ops"], dependencies=[Depends(require_api_key)])
+    def ratelimit_metrics() -> dict:
+        """Allowed/rejected request counts per API key (last 4 characters only)."""
+        return app.state.limiter.metrics()
 
     return app
 

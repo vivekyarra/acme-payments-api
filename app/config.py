@@ -19,6 +19,9 @@ class Settings:
     webhook_url: str = ""
     webhook_timeout_seconds: float = 5.0
     log_level: str = "INFO"
+    # Per-API-key token bucket: sustained requests/second, and the burst allowed on top.
+    rate_limit_per_second: float = 10.0
+    rate_limit_burst: int = 20
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -28,4 +31,6 @@ class Settings:
             webhook_url=os.environ.get("SHOP_WEBHOOK_URL", ""),
             webhook_timeout_seconds=float(os.environ.get("SHOP_WEBHOOK_TIMEOUT", "5")),
             log_level=os.environ.get("SHOP_LOG_LEVEL", "INFO"),
+            rate_limit_per_second=float(os.environ.get("SHOP_RATE_LIMIT_PER_SECOND", "10")),
+            rate_limit_burst=int(os.environ.get("SHOP_RATE_LIMIT_BURST", "20")),
         )
