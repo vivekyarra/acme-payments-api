@@ -1,13 +1,13 @@
-# Who is on the team. Replace OWNER, SENIOR_GITHUB and JUNIOR_GITHUB before a live run.
+# Who is on the team. Chat names are how people appear in the Switch rooms on Discord.
 repo: vivekyarra/acme-payments-api
 team_room: payments-team
 agents: {dibs: dibs, builder: builder, reviewer: reviewer}
 seniors:
-  - {handle: ravi, github: SENIOR_GITHUB, chat: [ravi]}
+  - {handle: ravi, github: ravi-dibs-demo, chat: [ravi, yarravivek_58986]}
 juniors:
   - handle: asha
-    github: JUNIOR_GITHUB
-    chat: [asha]
+    github: vivekyarra
+    chat: [asha, "yarravivek."]
     practice_room: asha-practice
     # 0 Unseen, 1 Exposed, 2 Guided, 3 Independent, 4 Fluent
     skills: {http-handlers: 3, sql-queries: 3, testing: 3, idempotency: 1, error-handling: 1, migrations: 0, concurrency: 0, observability: 0}
