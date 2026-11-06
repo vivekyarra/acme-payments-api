@@ -1,0 +1,15 @@
+name: dibs-guard
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+permissions:
+  issues: read
+  pull-requests: read
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vivekyarra/dibs@main
+        with:
+          config-dir: .dibs

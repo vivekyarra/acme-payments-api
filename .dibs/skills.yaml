@@ -1,0 +1,41 @@
+# The skills this codebase teaches. Paths are globs relative to the repo root;
+# keywords are matched against issue titles and bodies.
+- name: http-handlers
+  description: FastAPI routes, request/response models, status codes and error responses.
+  paths: ["app/api/**"]
+  keywords: [endpoint, route, handler, status code, "404", request, response, pagination, query parameter, GET, POST]
+
+- name: sql-queries
+  description: Writing and shaping SQL against SQLite; avoiding N+1 and unbounded queries.
+  paths: ["app/**/repo.py"]
+  keywords: [sql, query, select, join, "N+1", index, limit, offset, cursor, rows]
+
+- name: migrations
+  description: Forward-only schema changes in migrations/ and keeping data safe while doing them.
+  paths: ["migrations/**"]
+  keywords: [migration, schema, table, column, partition, alter, backfill]
+
+- name: idempotency
+  description: Making writes safe to repeat, e.g. client retries with an Idempotency-Key.
+  paths: ["app/orders/**"]
+  keywords: [idempotent, idempotency, Idempotency-Key, retry, duplicate, duplicates, dedupe]
+
+- name: testing
+  description: pytest tests that are deterministic, fast and prove behaviour.
+  paths: ["tests/**"]
+  keywords: [test, tests, flaky, pytest, fixture, deterministic, assert, timezone]
+
+- name: concurrency
+  description: Background workers, locks, shared counters and anything that runs in parallel.
+  paths: ["app/workers/**", "app/api/ratelimit.py"]
+  keywords: [concurrency, concurrent, race, lock, thread, worker, rate limit, throttle, backoff]
+
+- name: error-handling
+  description: Failing well - retries with backoff, timeouts, clear errors, no silent drops.
+  paths: ["app/webhooks/**", "app/**/errors.py"]
+  keywords: [error, failure, retry, backoff, timeout, exception, gives up, utc]
+
+- name: observability
+  description: Logs, metrics and tracing that let you debug production.
+  paths: ["app/logging.py"]
+  keywords: [log, logs, logging, correlation id, request id, metrics, tracing, observability]

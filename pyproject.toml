@@ -1,0 +1,33 @@
+[project]
+name = "dibs-demo-shop"
+version = "0.1.0"
+description = "A small orders API. Target repo for the Dibs live demo."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "httpx>=0.27",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+# Tests marked flaky_demo are deselected by default so CI stays green.
+# Run them on purpose with:  uv run pytest -m flaky_demo
+addopts = "-m 'not flaky_demo'"
+markers = [
+    "flaky_demo: a genuinely flaky test kept for issue #7; deselected by default",
+]
+xfail_strict = true
+filterwarnings = [
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]

@@ -1,0 +1,188 @@
+# The 10 issues for the Dibs demo. Order = GitHub issue number (1..10).
+# scripts/create_issues.sh sends only title, body and labels to GitHub.
+# skills / paths / est_hours are used by the offline demo and are NOT sent.
+# skills: "name:p" = primary, "name:s" = secondary.
+
+- title: Typo in 404 error message
+  body: |
+    `GET /orders/999` returns:
+
+    ```json
+    {"error": {"code": "not_found", "message": "Order 999 not foudn"}}
+    ```
+
+    "foudn" should be "found". The message comes from `NOT_FOUND_MESSAGE` in `app/api/errors.py`.
+
+    ## Acceptance criteria
+    - The 404 message reads `Order <id> not found`.
+    - A test in `tests/test_errors.py` asserts the exact message.
+  labels: []
+  skills: ["http-handlers:p"]
+  paths: ["app/api/errors.py", "tests/test_errors.py"]
+  est_hours: 0.1
+
+- title: "GET /orders returns every row: add pagination"
+  body: |
+    `GET /orders` (`app/api/orders.py`) returns every order in the table, with all of its
+    items. With a few thousand orders the response is megabytes and the request times out.
+    The query in `app/orders/repo.py` has no `LIMIT`.
+
+    The known-bug test `tests/known_bugs/test_known_bugs.py::test_list_orders_is_paginated`
+    shows that `?limit=10` is ignored.
+
+    ## Acceptance criteria
+    - `GET /orders` accepts `limit` (default 50, max 200) and a cursor (`after`, an order id).
+    - Responses are ordered newest first and stable across pages.
+    - Invalid `limit` values return 422 with the standard error shape.
+    - The SQL uses `LIMIT` with a keyset condition, not `OFFSET` over the whole table.
+    - Remove the `xfail` marker from `test_list_orders_is_paginated`; it passes.
+  labels: []
+  skills: ["http-handlers:p", "sql-queries:s"]
+  paths: ["app/api/orders.py", "app/orders/repo.py"]
+  est_hours: 1
+
+- title: "POST /orders creates duplicates when the client retries: make it idempotent"
+  body: |
+    Mobile clients retry `POST /orders` when the network drops the response. Each retry
+    creates a new order, so customers get charged twice. `create_order` in
+    `app/orders/service.py` inserts unconditionally and the route in `app/api/orders.py`
+    ignores the `Idempotency-Key` header that clients already send.
+
+    `tests/known_bugs/test_known_bugs.py::test_post_orders_is_idempotent` reproduces it:
+    two POSTs with the same `Idempotency-Key` create two rows.
+
+    ## Acceptance criteria
+    - A repeated `POST /orders` with the same `Idempotency-Key` returns the original order
+      (same id, same status code) and does not insert a second row.
+    - The same key with a *different* body returns 422 (or 409) with a clear error message.
+    - Requests without the header behave exactly as today.
+    - Two concurrent requests with the same key cannot both insert (think about where the
+      uniqueness is enforced).
+    - Remove the `xfail` marker from `test_post_orders_is_idempotent`; it passes.
+  labels: []
+  skills: ["idempotency:p", "error-handling:s", "http-handlers:s"]
+  paths: ["app/orders/service.py", "app/api/orders.py"]
+  est_hours: 0.5
+
+- title: Partition the orders table by month
+  body: |
+    The `orders` table (created in `migrations/0001_init.sql`) grows by ~200k rows a month
+    and the daily report scans it. Add `migrations/0002_partition.sql` that splits orders
+    by month (SQLite has no native partitioning, so propose a design: per-month tables plus
+    a view, or an archive table).
+
+    ## Acceptance criteria
+    - New migration `migrations/0002_partition.sql`, applied by the existing runner in `app/db.py`.
+    - Existing rows are moved without loss; row counts match before and after.
+    - `app/orders/repo.py` and `app/reports/daily.py` keep working unchanged, or are updated in the same PR.
+    - A rollback plan is written in the PR description.
+  labels: []
+  skills: ["migrations:p"]
+  paths: ["migrations/0002_partition.sql", "app/db.py"]
+  est_hours: 3
+
+- title: Add per-API-key rate limiting
+  body: |
+    One partner's batch job sent 40k requests in a minute and slowed the API for everyone.
+    `app/api/ratelimit.py` currently only counts requests per key; it never limits.
+
+    ## Acceptance criteria
+    - Each API key gets a token bucket (default 10 requests/second, burst 20, configurable in `app/config.py`).
+    - Over the limit returns 429 with a `Retry-After` header and the standard error shape.
+    - The limiter is safe under concurrent requests (no lost updates to the counters).
+    - Rate-limited requests are logged with the key's last 4 characters, and a counter of
+      rejected requests per key is exposed for metrics.
+    - Tests cover the burst, the refill, and two keys not affecting each other.
+  labels: []
+  skills: ["concurrency:p", "observability:p"]
+  paths: ["app/api/ratelimit.py", "app/config.py"]
+  est_hours: 2
+
+- title: "Webhook sender gives up on the first failure: add retries with backoff"
+  body: |
+    `WebhookSender.send` in `app/webhooks/sender.py` makes exactly one HTTP attempt. A single
+    503 or timeout from the partner marks the delivery `failed` forever in
+    `app/workers/outbox.py`, and partners miss `order.created` events.
+
+    `tests/known_bugs/test_known_bugs.py::test_webhook_sender_retries_transient_failures`
+    shows a 503 followed by a 200 is reported as a failure.
+
+    ## Acceptance criteria
+    - Retry on connection errors, timeouts, 429 and 5xx; do not retry other 4xx.
+    - Exponential backoff with jitter (e.g. 0.5s, 1s, 2s; max 5 attempts), configurable.
+    - `DeliveryResult.attempts` reports the real number of attempts.
+    - Tests do not actually sleep (inject the sleep function or clock).
+    - Remove the `xfail` marker from `test_webhook_sender_retries_transient_failures`; it passes.
+  labels: []
+  skills: ["error-handling:p", "concurrency:s"]
+  paths: ["app/webhooks/sender.py", "app/workers/outbox.py"]
+  est_hours: 1
+
+- title: test_order_totals is flaky
+  body: |
+    `test_order_totals` in `tests/test_orders.py` fails roughly one run in five. It uses
+    random prices and compares float totals with `==`. It is marked `flaky_demo` and
+    deselected by default so CI stays green; run it with `uv run pytest -m flaky_demo`.
+
+    ## Acceptance criteria
+    - The test is deterministic: same result on every run (fixed data or fixed cases).
+    - It compares money correctly (cents, `Decimal`, or `pytest.approx`, with a reason).
+    - It still checks totals across several items and quantities.
+    - The `flaky_demo` marker is removed and the test runs in the default suite.
+  labels: []
+  skills: ["testing:p"]
+  paths: ["tests/test_orders.py"]
+  est_hours: 0.5
+
+- title: N+1 query when listing orders with items
+  body: |
+    `list_orders_with_items` in `app/orders/repo.py` runs one `SELECT` for the orders and
+    then one more `SELECT` per order for its items. 500 orders means 501 queries.
+
+    `tests/known_bugs/test_known_bugs.py::test_listing_orders_uses_constant_queries`
+    counts the statements.
+
+    ## Acceptance criteria
+    - Listing N orders runs a constant number of queries (at most 2), whatever N is.
+    - Items stay in insertion order and are attached to the right order.
+    - Orders with no items still appear, with an empty list.
+    - Remove the `xfail` marker from `test_listing_orders_uses_constant_queries`; it passes.
+  labels: []
+  skills: ["sql-queries:p"]
+  paths: ["app/orders/repo.py"]
+  est_hours: 0.5
+
+- title: Add a correlation id to every log line
+  body: |
+    When a partner reports a failed order we cannot find all the log lines for that request.
+    `app/logging.py` uses a plain format with no request context.
+
+    ## Acceptance criteria
+    - Each request gets a correlation id: taken from the `X-Request-ID` header if present, otherwise generated.
+    - The id is included in every log line written while handling that request (use `contextvars`).
+    - The id is returned in the `X-Request-ID` response header.
+    - Webhook deliveries queued by the request carry the id too.
+    - A test asserts two concurrent requests log different ids.
+  labels: []
+  skills: ["observability:p"]
+  paths: ["app/logging.py", "app/main.py"]
+  est_hours: 1
+
+- title: Daily report uses server local time instead of UTC
+  body: |
+    `app/reports/daily.py` computes the start and end of "the day" in the timezone of the
+    machine running the report (`_server_tz`). The prod box runs in IST (UTC+5:30), so an
+    order placed at 23:30 UTC on 1 March is missing from the 1 March report.
+    Timestamps in the database are UTC.
+
+    `tests/known_bugs/test_known_bugs.py::test_daily_report_uses_utc_days` reproduces it.
+
+    ## Acceptance criteria
+    - Report days are UTC calendar days, whatever the server timezone.
+    - The default day ("yesterday") is computed in UTC too.
+    - Tests pin the clock and the timezone and do not depend on the machine running them.
+    - Remove the `xfail` marker from `test_daily_report_uses_utc_days`; it passes.
+  labels: []
+  skills: ["testing:p", "error-handling:s"]
+  paths: ["app/reports/daily.py", "tests/test_reports.py"]
+  est_hours: 1

@@ -1,0 +1,14 @@
+# Learning-budget policy. See DIBS_SPEC.md section 8.
+risk_paths: ["migrations/", "app/auth/", "app/payments/"]
+max_active_per_junior: 1
+max_backlog_share: 0.2
+score_threshold: 3
+proposal_timeout_hours: 24
+hold_max_hours: 48
+release_stuck_multiplier: 2
+stuck_answer_minutes: 30
+slack_safety: 1.5
+default_due_days: 7
+baseline_senior_minutes: 45
+max_teaching_per_pr: 2
+auto_delegate: true
