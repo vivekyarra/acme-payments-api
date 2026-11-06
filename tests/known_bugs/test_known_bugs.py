@@ -9,7 +9,7 @@ So CI proves the bugs are real, and also proves when they are gone.
 
 from __future__ import annotations
 
-from datetime import date, timedelta, timezone
+from datetime import date
 
 import httpx
 import pytest
@@ -68,11 +68,9 @@ def test_listing_orders_uses_constant_queries(db):
     assert len(selects) <= 2
 
 
-@pytest.mark.xfail(strict=True, reason="issue #10: daily report day boundaries use server local time")
-def test_daily_report_uses_utc_days(db, monkeypatch):
-    # A server in India (UTC+5:30). An order at 23:30 UTC on 1 March belongs to
-    # the 1 March report, whatever timezone the server happens to be in.
-    monkeypatch.setattr(daily, "_server_tz", lambda: timezone(timedelta(hours=5, minutes=30)))
+def test_daily_report_uses_utc_days(db):
+    # An order at 23:30 UTC on 1 March belongs to the 1 March report, whatever
+    # timezone the server happens to be in (prod runs in IST, UTC+5:30).
     db.execute(
         "INSERT INTO orders (customer_id, total_cents, created_at)"
         " VALUES ('cus_1', 1000, '2026-03-01T23:30:00Z')"

@@ -1,4 +1,7 @@
-"""Daily sales report: order count and revenue for one calendar day.
+"""Daily sales report: order count and revenue for one UTC calendar day.
+
+Timestamps in the database are UTC, so report days are UTC days too, whatever
+timezone the machine running the report is in.
 
 Run it for yesterday with ``python -m app.reports.daily``.
 """
@@ -7,7 +10,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, time, timedelta, timezone, tzinfo
+from datetime import date, datetime, time, timedelta, timezone
 
 from app.logging import get_logger
 
@@ -24,25 +27,25 @@ class DailyReport:
     revenue_cents: int
 
 
-def _server_tz() -> tzinfo:
-    """The timezone of the machine running the report."""
-    return datetime.now().astimezone().tzinfo
+def _utcnow() -> datetime:
+    """Current time in UTC. Tests replace this to pin the clock."""
+    return datetime.now(timezone.utc)
+
+
+def yesterday_utc() -> date:
+    return _utcnow().date() - timedelta(days=1)
 
 
 def day_bounds(day: date) -> tuple[str, str]:
-    """Start (inclusive) and end (exclusive) of ``day``, as stored timestamps."""
-    tz = _server_tz()
-    start = datetime.combine(day, time.min, tzinfo=tz)
+    """Start (inclusive) and end (exclusive) of the UTC day ``day``, as stored timestamps."""
+    start = datetime.combine(day, time.min, tzinfo=timezone.utc)
     end = start + timedelta(days=1)
-    return (
-        start.astimezone(timezone.utc).strftime(_DB_FORMAT),
-        end.astimezone(timezone.utc).strftime(_DB_FORMAT),
-    )
+    return start.strftime(_DB_FORMAT), end.strftime(_DB_FORMAT)
 
 
 def build_daily_report(conn: sqlite3.Connection, day: date | None = None) -> DailyReport:
     if day is None:
-        day = date.today() - timedelta(days=1)
+        day = yesterday_utc()
     start, end = day_bounds(day)
     row = conn.execute(
         "SELECT"
