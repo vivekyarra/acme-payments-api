@@ -1,6 +1,7 @@
 """POST order events to a partner's webhook URL.
 
-The sender is synchronous and makes exactly one HTTP attempt per delivery.
+The sender is synchronous. Transient failures (network errors, HTTP 429 and
+5xx) are retried with exponential backoff; permanent ones (other 4xx) are not.
 The caller (``app.workers.outbox``) records the result.
 """
 
@@ -9,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import httpx
@@ -32,6 +35,11 @@ def sign(payload: bytes, secret: str) -> str:
     return hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
 
 
+def is_transient(status_code: int) -> bool:
+    """A failure worth retrying: the partner may recover."""
+    return status_code == 429 or status_code >= 500
+
+
 class WebhookSender:
     def __init__(
         self,
@@ -39,9 +47,15 @@ class WebhookSender:
         *,
         timeout: float = 5.0,
         secret: str = "",
+        max_attempts: int = 4,
+        backoff: float = 0.5,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._client = client or httpx.Client(timeout=timeout)
         self._secret = secret
+        self._max_attempts = max(1, max_attempts)
+        self._backoff = backoff
+        self._sleep = sleep
 
     def send(self, url: str, payload: dict) -> DeliveryResult:
         body = json.dumps(payload, separators=(",", ":")).encode()
@@ -49,19 +63,31 @@ class WebhookSender:
         if self._secret:
             headers[SIGNATURE_HEADER] = sign(body, self._secret)
 
+        result = DeliveryResult(ok=False, attempts=0)
+        for attempt in range(1, self._max_attempts + 1):
+            result = self._attempt(url, body, headers, attempt)
+            if result.ok:
+                return result
+            transient = result.status_code is None or is_transient(result.status_code)
+            if not transient or attempt == self._max_attempts:
+                return result
+            self._sleep(self._backoff * 2 ** (attempt - 1))
+        return result
+
+    def _attempt(self, url: str, body: bytes, headers: dict, attempt: int) -> DeliveryResult:
         try:
             response = self._client.post(url, content=body, headers=headers)
         except httpx.HTTPError as exc:
-            log.warning("webhook to %s failed: %s", url, exc)
-            return DeliveryResult(ok=False, attempts=1, error=str(exc))
+            log.warning("webhook to %s failed (attempt %d): %s", url, attempt, exc)
+            return DeliveryResult(ok=False, attempts=attempt, error=str(exc))
 
         if response.is_success:
-            return DeliveryResult(ok=True, attempts=1, status_code=response.status_code)
+            return DeliveryResult(ok=True, attempts=attempt, status_code=response.status_code)
 
-        log.warning("webhook to %s got HTTP %s", url, response.status_code)
+        log.warning("webhook to %s got HTTP %s (attempt %d)", url, response.status_code, attempt)
         return DeliveryResult(
             ok=False,
-            attempts=1,
+            attempts=attempt,
             status_code=response.status_code,
             error=f"HTTP {response.status_code}",
         )

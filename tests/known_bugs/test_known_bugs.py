@@ -39,7 +39,6 @@ def test_post_orders_is_idempotent(client, db):
     assert repo.count_orders(db) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="issue #6: webhook sender gives up after one failed attempt")
 def test_webhook_sender_retries_transient_failures():
     calls = []
 
